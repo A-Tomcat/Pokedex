@@ -1,6 +1,9 @@
 package pokecache
 
 import (
+	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -54,4 +57,26 @@ func (c *Cache) reapLoop() {
 		}
 		c.mu.Unlock()
 	}
+}
+
+func (c *Cache) Check(url string) ([]byte, error) {
+	var body []byte
+	if val, ok := c.Get(url); ok {
+		body = val
+	} else {
+		res, err := http.Get(url)
+		if err != nil {
+			return body, err
+		}
+		defer res.Body.Close()
+		if res.StatusCode >= 300 {
+			return body, fmt.Errorf("Error: %d, check spelling", res.StatusCode)
+		}
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return body, err
+		}
+		c.Add(url, body)
+	}
+	return body, nil
 }

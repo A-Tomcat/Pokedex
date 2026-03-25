@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"math/rand"
 	"os"
 	"sort"
 )
@@ -12,10 +12,10 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func() error
+	callback    func(*config, ...string) error
 }
 
-func cmd(cfg *config) map[string]cliCommand {
+func cmd(cfg *config, args ...string) map[string]cliCommand {
 	return map[string]cliCommand{
 		"exit": {
 			name:        "exit",
@@ -25,28 +25,38 @@ func cmd(cfg *config) map[string]cliCommand {
 		"help": {
 			name:        "help",
 			description: "Displays a help message",
-			callback:    func() error { return commandHelp(cfg) },
+			callback:    commandHelp,
 		},
 		"map": {
 			name:        "map",
 			description: "Displays 20 next Locations",
-			callback:    func() error { return commandMap(cfg) },
+			callback:    commandMap,
 		},
 		"mapb": {
 			name:        "mapb",
 			description: "Displays 20 previous Locations",
-			callback:    func() error { return commandMapb(cfg) },
+			callback:    commandMapb,
+		},
+		"explore": {
+			name:        "explore <location>",
+			description: "Displays Pokemon at Location",
+			callback:    commandExplore,
+		},
+		"catch": {
+			name:        "catch <pokemon>",
+			description: "Adds <pokemon> to users pokedex",
+			callback:    commandCatch,
 		},
 	}
 }
 
-func commandExit() error {
+func commandExit(cfg *config, args ...string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(cfg *config) error {
+func commandHelp(cfg *config, args ...string) error {
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Println("Usage:")
 	fmt.Println()
@@ -65,27 +75,17 @@ func commandHelp(cfg *config) error {
 	return nil
 }
 
-func commandMap(cfg *config) error {
+func commandMap(cfg *config, args ...string) error {
 	url := "https://pokeapi.co/api/v2/location-area/"
 	if cfg.nextLocationURL != nil {
 		url = *cfg.nextLocationURL
 	}
 	var body []byte
 	locations := RespShallowLocations{}
-	if val, ok := cfg.cache.Get(url); ok {
-		body = val
-	} else {
-		res, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
 
-		body, err = io.ReadAll(res.Body)
-		if err != nil {
-			return err
-		}
-		cfg.cache.Add(url, body)
+	body, err := cfg.cache.Check(url)
+	if err != nil {
+		return err
 	}
 
 	if err := json.Unmarshal(body, &locations); err != nil {
@@ -102,7 +102,7 @@ func commandMap(cfg *config) error {
 	return nil
 }
 
-func commandMapb(cfg *config) error {
+func commandMapb(cfg *config, args ...string) error {
 	if cfg.previousLocationURL == nil {
 		return fmt.Errorf("you're on the first page")
 	}
@@ -110,20 +110,10 @@ func commandMapb(cfg *config) error {
 
 	var body []byte
 	locations := RespShallowLocations{}
-	if val, ok := cfg.cache.Get(url); ok {
-		body = val
-	} else {
-		res, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
+	body, err := cfg.cache.Check(url)
 
-		body, err = io.ReadAll(res.Body)
-		if err != nil {
-			return err
-		}
-		cfg.cache.Add(url, body)
+	if err != nil {
+		return err
 	}
 
 	if err := json.Unmarshal(body, &locations); err != nil {
@@ -136,6 +126,62 @@ func commandMapb(cfg *config) error {
 
 	for _, loc := range locations.Results {
 		fmt.Println(loc.Name)
+	}
+
+	return nil
+}
+
+func commandExplore(cfg *config, args ...string) error {
+	if len(args) < 1 {
+		return errors.New("Provide a location: explore <location>")
+	}
+	loc := args[0]
+	url := "https://pokeapi.co/api/v2/location-area/"
+	area_url := url + loc + "/"
+
+	var location LocationArea
+	var body []byte
+
+	body, err := cfg.cache.Check(area_url)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, &location); err != nil {
+		return err
+	}
+
+	fmt.Printf("Exploring %s...\n", loc)
+	fmt.Println("Found Pokemon:")
+	for _, pokemon := range location.PokemonEncounters {
+		fmt.Printf(" - %s\n", pokemon.Pokemon.Name)
+	}
+	return nil
+}
+
+func commandCatch(cfg *config, args ...string) error {
+	if len(args) < 1 {
+		return errors.New("Provide a Pokemon: catch <pokemon>")
+	}
+	pk := args[0]
+	url := "https://pokeapi.co/api/v2/pokemon/" + pk + "/"
+	var pokemon Pokemon
+	var body []byte
+
+	body, err := cfg.cache.Check(url)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, &pokemon); err != nil {
+		return err
+	}
+	fmt.Printf("Throwing a Pokeball at %s...\n", pokemon.Name)
+	chance := rand.Intn(pokemon.BaseExperience)
+
+	if float64(chance) > float64(pokemon.BaseExperience)*0.8 {
+		fmt.Printf("%s was caught!\n", pokemon.Name)
+		cfg.caughtPokemon[pokemon.Name] = pokemon
+	} else {
+		fmt.Printf("%s escaped!\n", pokemon.Name)
 	}
 
 	return nil
