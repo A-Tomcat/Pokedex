@@ -1,57 +1,44 @@
 package main
 
 import (
+	"Pokedex/internal/pokecache"
 	"bufio"
 	"fmt"
 	"os"
+	"time"
 )
 
-type cliCommand struct {
-	name        string
-	description string
-	callback    func() error
+type config struct {
+	nextLocationURL     *string
+	previousLocationURL *string
+	cache               *pokecache.Cache
 }
-
-func commandExit() error {
-	fmt.Println("Closing the Pokedex... Goodbye!")
-	os.Exit(0)
-	return nil
-}
-func commandHelp() error {
-	fmt.Println("Welcome to the Pokedex!")
-	fmt.Println("Usage:\n")
-	for command, c := range commands {
-		fmt.Printf("%s: %s\n", command, c.description)
-	}
-	return nil
-}
-
-var commands = make(map[string]cliCommand)
 
 func main() {
-	commands = map[string]cliCommand{
-		"exit": {
-			name:        "exit",
-			description: "Exit the Pokedex",
-			callback:    commandExit,
-		},
-		"help": {
-			name:        "help",
-			description: "Displays a help message",
-			callback:    commandHelp,
-		},
+	cfg := &config{
+		cache: pokecache.NewCache(5 * time.Second),
 	}
+	cmds := cmd(cfg)
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
 		fmt.Print("Pokedex > ")
-		i := scanner.Scan()
-		if i == false {
-			break
+		scanner.Scan()
+		prompt := cleanInput(scanner.Text())
+		if len(prompt) == 0 {
+			continue
 		}
-		prompt := scanner.Text()
-		if command, ok := commands[prompt]; ok == true {
-			command.callback()
+		commandName := prompt[0]
+		command, ok := cmds[commandName]
+		if ok == true {
+			err := command.callback()
+			if err != nil {
+				fmt.Println(err)
+			}
+			continue
+		} else {
+			fmt.Println("Unknown command, try 'help'")
+			continue
 		}
 	}
 
