@@ -47,6 +47,16 @@ func cmd(cfg *config, args ...string) map[string]cliCommand {
 			description: "Adds <pokemon> to users pokedex",
 			callback:    commandCatch,
 		},
+		"inspect": {
+			name:        "inspect <pokemon>",
+			description: "Grants information on <pokemon> if caught",
+			callback:    commandInspect,
+		},
+		"pokedex": {
+			name:        "pokedex",
+			description: "Lists all caught Pokemon",
+			callback:    commandPokedex,
+		},
 	}
 }
 
@@ -160,7 +170,7 @@ func commandExplore(cfg *config, args ...string) error {
 
 func commandCatch(cfg *config, args ...string) error {
 	if len(args) < 1 {
-		return errors.New("Provide a Pokemon: catch <pokemon>")
+		return errors.New("Provide a valid Pokemon: catch <pokemon>")
 	}
 	pk := args[0]
 	url := "https://pokeapi.co/api/v2/pokemon/" + pk + "/"
@@ -183,6 +193,46 @@ func commandCatch(cfg *config, args ...string) error {
 	} else {
 		fmt.Printf("%s escaped!\n", pokemon.Name)
 	}
+
+	return nil
+}
+
+func commandInspect(cfg *config, args ...string) error {
+	if len(args) < 1 {
+		return errors.New("Provide a valid Pokemon: inspect <pokemon>")
+	}
+	pk := args[0]
+	if pokemon, ok := cfg.caughtPokemon[pk]; ok {
+		fmt.Printf("Name: %s\n", pokemon.Name)
+		fmt.Printf("Height: %d\n", pokemon.Height)
+		fmt.Printf("Weight: %d\n", pokemon.Weight)
+		fmt.Println("Stats:")
+		for _, stat := range pokemon.Stats {
+			fmt.Printf(" -%s: %d\n", stat.Stat.Name, stat.BaseStat)
+		}
+		fmt.Println("Types:")
+		fmt.Printf(" - %s\n", pokemon.Types[0].Type.Name)
+		if len(pokemon.Types) == 2 {
+			fmt.Printf(" - %s\n", pokemon.Types[1].Type.Name)
+		} else {
+			fmt.Println("Too many types")
+		}
+
+	} else {
+		fmt.Printf("you have not caught %s. Catch it to gain it's information\n", pokemon.Name)
+	}
+
+	return nil
+}
+
+func commandPokedex(cfg *config, args ...string) error {
+	fmt.Println("Your pokedex:")
+
+	for _, pokemon := range cfg.caughtPokemon {
+		fmt.Printf(" - %s\n", pokemon.Name)
+	}
+
+	//Maybe sort pokemon by Dexnumber
 
 	return nil
 }
